@@ -95,13 +95,20 @@ const sb = window.supabase.createClient(
 );
 
 async function loadDropdowns(){
-  const [a, s, st, ft, ts] = await Promise.all([
+  const results = await Promise.allSettled([
     sb.from("dropdown_airlines").select("name").order("sort_order"),
     sb.from("dropdown_suppliers").select("name").order("sort_order"),
     sb.from("dropdown_sector_types").select("value,label").order("sort_order"),
     sb.from("dropdown_fare_types").select("value,label").order("sort_order"),
     sb.from("template_sections").select("name").order("sort_order"),
   ]);
+  const get = i => (results[i].status === "fulfilled" ? results[i].value : { data: null, error: results[i].reason });
+  const a = get(0), s = get(1), st = get(2), ft = get(3), ts = get(4);
+  if (a.error)  console.error("dropdown_airlines",  a.error);
+  if (s.error)  console.error("dropdown_suppliers", s.error);
+  if (st.error) console.error("dropdown_sector_types", st.error);
+  if (ft.error) console.error("dropdown_fare_types",  ft.error);
+  if (ts.error) console.error("template_sections",   ts.error);
   if (a.data)  AIRLINES        = a.data.map(r => r.name);
   if (s.data)  SUPPLIERS       = s.data.map(r => r.name);
   if (st.data) SECTOR_TYPES    = st.data.map(r => ({ value:r.value, label:r.label }));
@@ -147,9 +154,15 @@ async function loadUserSettings(){
   _settingsCache.data = data || {};
   _settingsCache.loaded = true;
 }
-sb.auth.onAuthStateChange(async (_evt, session) => {
+// IMPORTANT: keep this callback synchronous. Calling other supabase-js
+// methods (or awaiting) inside onAuthStateChange deadlocks the client in
+// supabase-js v2 — symptom is a blank screen after sign-in / user changes
+// / when Realtime is enabled. Defer any async work with setTimeout(...,0).
+sb.auth.onAuthStateChange((_evt, session) => {
   _authUser = session ? session.user : null;
-  if (_authUser) await loadUserSettings();
+  if (_authUser) {
+    setTimeout(() => { loadUserSettings().catch(e => console.error(e)); }, 0);
+  }
 });
 
 /* ---------- Hash + standardize ---------- */
